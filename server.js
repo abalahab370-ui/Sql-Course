@@ -56,6 +56,51 @@ app.post("/api/registCustomer", async (req, res) => {
     }
 });
 
+
+app.get('/api/orders/top-per-customer' , async (req , res) => {
+    try {
+
+        const {top} = req.query ;
+
+        if (!top) {
+            return res.status(400).json({'message' : 'mate i can give like top one or something like that but i dont really have energy for that'}) ;
+        } ;
+        //buddy we have to deal with that type shi of connectio to sql database first )=) :
+        const pool = await poolPromise;
+
+        const request = pool.request() ;
+        
+        request.input('rowLimit',sql.Int , top) ;
+
+        const result = await request.query(`
+        SELECT DISTINCT
+        * ,
+        max(row_num) over() as rowLimit
+        from (
+        SELECT [order_id]
+            ,[customer_id]
+            ,[order_date]
+            ,[total_amount]
+            ,[status],
+            ROW_NUMBER() over(PARTITION BY customer_id order by total_amount DESC) AS  row_num ,
+            rank() over(PARTITION BY customer_id order by total_amount DESC) AS  
+            rk ,
+            dense_rank() over(PARTITION BY customer_id order by total_amount DESC) AS  dense_rk,
+            SUM(total_amount) over(PARTITION BY customer_id order by order_date) as running_total,
+            AVG(isnull(cast(total_amount as int),0)) over(PARTITION BY customer_id ) as avg_order_amount 
+        from orders
+        )t 
+        where 
+        row_num <= @rowLimit ;
+        `) ;
+        return res.status(200).json(result.recordset)
+    }catch (err){
+        console.error(`Sir we have a problem in getting top N per Customer ! : ${err}`);
+    }
+})
+
+
+
 app.listen(3000, () => {
     console.log("Server running on http://localhost:3000");
 });

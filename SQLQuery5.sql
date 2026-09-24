@@ -538,7 +538,7 @@ SELECT
    - Policy 3 (Recommended for Reporting): Standardize NULLs/empty strings 
      to a display value like 'Unknown' using COALESCE().
 */
-
+--SQL Window Functions Basics (Visually Explained) | PARTITION BY, ORDER BY, FRAME | #SQL Course 22 
 /* 
    SQL WINDOW FUNCTIONS SUMMARY
    
@@ -568,3 +568,150 @@ SELECT
     sales,
     SUM(sales) OVER (PARTITION BY product_id ORDER BY order_date) AS running_total_sales
 FROM sales_orders;
+
+/* 
+SQL Window Aggregate Functions Summary:
+- Aggregate functions (COUNT, SUM, AVG, MIN, MAX) perform calculations over a set of rows without collapsing them into a single output row (unlike GROUP BY).
+- Syntax: FUNCTION(expression) OVER (PARTITION BY ... ORDER BY ...)
+- All clauses (PARTITION BY, ORDER BY, and frame) are optional.
+- Null handling is critical: COUNT(*) includes nulls, while others ignore them in calculations.
+- Use cases: Overall metrics, category-based comparisons, data quality checks (finding duplicates), running totals, and moving averages.
+*/
+
+-- Example 1: Total and Category-level Count (03:00)
+SELECT order_id, 
+       COUNT(*) OVER() AS total_orders,
+       COUNT(*) OVER(PARTITION BY customer_id) AS orders_by_customer
+FROM orders;
+
+-- Example 2: Running Total (45:39)
+SELECT month, sales,
+       SUM(sales) OVER(ORDER BY month) AS running_total
+FROM sales_data;
+
+-- Example 3: Moving Average (55:15)
+SELECT product_id, sales,
+       AVG(sales) OVER(PARTITION BY product_id ORDER BY order_date 
+                       ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving_avg
+FROM orders;
+--note : the default moving or running is set up only when u use order by without specifying the frame while if u use partition alone it not gonna apply it , the default frame seted by the order by is : rows between unbounded precedent and current row !s
+
+-- SQL WINDOW RANKING FUNCTIONS SUMMARY
+-- These functions help assign orders or segments to rows in a dataset.
+-- They require an OVER clause with at least an ORDER BY.
+
+-- 1. INTEGER-BASED RANKING (0:00:58)
+-- Used for unique ID assignment, Top-N analysis, and gapless rankings.
+
+ROW_NUMBER() OVER (ORDER BY sales DESC)
+
+-- RANK() handles ties by giving them the same number, leaving gaps (0:10:13)
+RANK() OVER (ORDER BY sales DESC)
+
+-- DENSE_RANK() handles ties but keeps the sequence consecutive (0:14:18)
+DENSE_RANK() OVER (ORDER BY sales DESC)
+
+-- NTILE(n) divides data into n roughly equal buckets (0:35:21)
+NTILE(4) OVER (ORDER BY sales DESC)
+
+-- 2. PERCENTAGE-BASED RANKING (0:00:58)
+-- Ideal for distribution and relative contribution analysis (normalized 0 to 1).
+
+-- CUME_DIST() provides cumulative distribution, inclusive of current row (0:50:10)
+CUME_DIST() OVER (ORDER BY sales DESC) --what its my rank percentage in this list like in the highest 1% or 40%
+
+-- PERCENT_RANK() provides relative position, operating more exclusively (0:53:52)
+PERCENT_RANK() OVER (ORDER BY sales DESC) -- how many are belowe it (row - 1)
+
+select 
+first_name,
+credit_score,
+cast(CUME_DIST_Ranking * 100 as varchar )+ '%' as CUME_DIST_Ranking ,
+cast(precentage_ranking * 100 as varchar ) + '%' as precentage_ranking 
+from (
+select 
+      [customer_id]
+      ,[first_name]
+      ,[last_name]
+      , isnull(credit_score , 0) as[credit_score],
+      CUME_DIST() over(order by credit_score DESC) as CUME_DIST_Ranking  ,
+      PERCENT_RANK() over(order by credit_score DESC ) as precentage_ranking 
+from customers
+)t ;
+
+/* 
+   SQL Value Window Functions Summary (0:33)
+   Purpose: Access data from other rows within a partition 
+   to perform comparative analysis without self-joins.
+   
+   Required: ORDER BY is mandatory for all value functions.
+   Optional: PARTITION BY (to group data).
+
+   1. LEAD: Access a value from the following row(s).
+   2. LAG: Access a value from the preceding row(s).
+   3. FIRST_VALUE: Access the first value in the window frame.
+   4. LAST_VALUE: Access the last value in the window frame.
+*/
+
+-- Example: Month-over-Month Sales Change (14:01)
+SELECT 
+    month, 
+    sales AS current_sales,
+    LAG(sales) OVER(ORDER BY month) AS previous_month_sales
+FROM sales_data;
+
+-- Example: Next Order Date for Retention (21:00)
+SELECT 
+    customer_id, 
+    order_date,
+    LEAD(order_date) OVER(PARTITION BY customer_id ORDER BY order_date) AS next_order
+FROM orders;
+
+-- Example: Highest/Lowest Sales with FIRST_VALUE/LAST_VALUE (29:36)
+-- Note: LAST_VALUE requires a custom frame to work as expected
+SELECT 
+    product_id, 
+    sales,
+    FIRST_VALUE(sales) OVER(PARTITION BY product_id ORDER BY sales ASC) AS lowest_sales,
+    LAST_VALUE(sales) OVER(PARTITION BY product_id ORDER BY sales ASC 
+                           ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING) AS highest_sales
+FROM products;
+
+/*
+   Key Use Cases:
+   - Time Series Analysis: Calculating month-over-month or year-over-year growth (14:26).
+   - Customer Retention: Measuring time gaps between consecutive customer orders (21:02).
+   - Comparative Analytics: Comparing individual records against extreme values (lowest/highest) 
+     within a group (41:03).
+*/
+--SQL Techniques You Need in Every Project (Visually Explained) | #SQL Course26 
+/* 
+  SUMMARY: 5 ESSENTIAL SQL TECHNIQUES FOR PROJECT ARCHITECTURE 
+  ------------------------------------------------------------
+
+  1. THE PROBLEM (0:41 - 7:55)
+     - Real-world database environments involve multiple roles (Analyst, Data Engineer, 
+       Data Scientist) leading to:
+       - Redundant logic in queries.
+       - Performance bottlenecks due to unoptimized complexity.
+       - Difficulty navigating complex physical data models.
+       - Data security risks from unrestricted access.
+
+  2. THE SOLUTIONS (7:56 - 18:07)
+     - Five techniques to be covered: Subqueries, CTEs, Views, Temporary Tables, and CTAS.
+
+  3. DATABASE ARCHITECTURE FUNDAMENTALS (7:56 - 17:06)
+     - Server-side components:
+       - Database Engine: The core for processing tasks.
+       - Storage Hierarchy:
+         - User Data: The main persistent data (e.g., Tables).
+         - System Catalog: Metadata (information about data, e.g., Information Schema).
+         - Temporary Data: Short-term storage (tempDB) for processing/sorting.
+       - Memory hierarchy: Cache (fast, short-term) vs. Disk (slower, permanent).
+
+  4. QUERY EXECUTION FLOW (17:07 - 18:07)
+     - Client submits SQL -> Database Engine checks Cache -> If missing, reads from Disk -> 
+       Returns results to client.
+
+  NEXT STEPS: Deep dive into Subqueries (18:20).
+*/

@@ -127,3 +127,35 @@ from (
 ;
 SELECT *
 from customers
+
+USE salesDB;
+GO
+
+-- Add extra orders with tied amounts for Customer 1 and 2
+INSERT INTO orders (customer_id, order_date, total_amount, status) VALUES
+(1, '2026-03-01 10:00:00', 500.00, 'Completed'),
+(1, '2026-03-05 14:30:00', 500.00, 'Completed'), -- Tied at 500.00 with above!
+(1, '2026-03-12 09:15:00', 200.00, 'Completed'),
+(2, '2026-03-02 11:00:00', 300.00, 'Completed'),
+(2, '2026-03-10 16:20:00', 300.00, 'Completed'), -- Tied at 300.00 with above!
+(2, '2026-03-15 18:00:00', 100.00, 'Completed');
+
+SELECT DISTINCT
+* ,
+max(row_num) over() as rowLimit
+from (
+SELECT [order_id]
+      ,[customer_id]
+      ,[order_date]
+      ,[total_amount]
+      ,[status],
+      ROW_NUMBER() over(PARTITION BY customer_id order by total_amount DESC) AS  row_num ,
+      rank() over(PARTITION BY customer_id order by total_amount DESC) AS  
+      rk ,
+      dense_rank() over(PARTITION BY customer_id order by total_amount DESC) AS  dense_rk,
+      SUM(total_amount) over(PARTITION BY customer_id order by order_date) as running_total,
+      AVG(isnull(cast(total_amount as int),0)) over(PARTITION BY customer_id ) as avg_order_amount 
+from orders
+)t 
+where 
+row_num <= 2 ;
