@@ -1020,3 +1020,77 @@ from OrgHierarchy
 
 SELECT *
 FROM employees
+
+sql
+/*
+========================================================================
+SQL VIEWS: COMPREHENSIVE NOTES & USE CASES (Course 29)
+========================================================================
+
+1. DATABASE STRUCTURE & HIERARCHY (0:39)
+   - SQL Server (Highest level, management center)
+   - Database (Structured collection of data objects)
+   - Schema (Logical grouping: e.g., 'sales' schema for related tables/views)
+   - Table (Physical storage of rows/columns)
+   - View (Virtual table; persists a query, not the data)
+
+2. 3-LEVEL ARCHITECTURE (6:10)
+   - Physical Layer: Where data lives on disk; managed by DBAs.
+   - Logical Layer: The database design/schema level.
+   - View Layer: External abstraction layer for end-users/apps.
+
+3. VIEWS VS. TABLES VS. CTEs (12:55, 17:52)
+   - View: Virtual table. No physical data storage. Logic persisted in catalog.
+   - Table: Physical storage. High maintenance/cost to change.
+   - CTE: Temporary result set within a single query. No maintenance/persistence.
+
+4. DDL COMMANDS (3:25)
+   - CREATE VIEW: Define the view.
+   - ALTER/DROP VIEW: Modify or remove the view.
+
+5. TOP 6 USE CASES
+   #1 CENTRAL LOGIC (14:34): Avoid repeating complex query logic.
+   #2 HIDE COMPLEXITY (34:52): Present a user-friendly API over complex joins.
+   #3 DATA SECURITY (45:27): Row/Column level security by limiting access.
+   #4 FLEXIBILITY/DYNAMIC (52:05): Decouple physical table changes from end-users.
+   #5 MULTIPLE LANGUAGES (54:18): Translate column names for international users.
+   #6 VIRTUAL MARTS (56:22): Efficiently slice data from a Warehouse into Marts.
+
+========================================================================
+SQL CODE EXAMPLES
+========================================================================
+
+-- Create a simple View in a specific schema
+CREATE VIEW sales.V_MonthlySummary AS 
+SELECT 
+    DATE_TRUNC('month', order_date) AS order_month,
+    SUM(sales) AS total_sales,
+    COUNT(order_id) AS total_orders
+FROM sales.orders
+GROUP BY DATE_TRUNC('month', order_date);
+
+-- Querying the View
+SELECT * FROM sales.V_MonthlySummary;
+
+-- Handling 'Create or Replace' logic in SQL Server (T-SQL)
+IF OBJECT_ID('sales.V_MonthlySummary', 'V') IS NOT NULL
+    DROP VIEW sales.V_MonthlySummary;
+GO
+CREATE VIEW sales.V_MonthlySummary AS
+SELECT ... -- new query here
+GO
+
+-- Row-level security example
+CREATE VIEW sales.V_OrderDetails_EU AS
+SELECT o.*, c.country
+FROM sales.orders o
+JOIN sales.customers c ON o.customer_id = c.customer_id
+WHERE c.country <> 'USA';
+
+========================================================================
+SUMMARY
+========================================================================
+Views act as an abstraction layer (10:57). They enhance security, 
+reusability, and maintainability by allowing you to change underlying 
+physical tables without breaking downstream reports or applications.
+*/
