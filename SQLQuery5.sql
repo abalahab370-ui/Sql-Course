@@ -715,3 +715,308 @@ FROM products;
 
   NEXT STEPS: Deep dive into Subqueries (18:20).
 */
+
+--SQL Subquery (Visually Explained) | Complete Guide with Correlated Subquery | #SQL Course 27
+
+/* 
+ * SQL SUBQUERY SUMMARY 
+ * 
+ * DEFINITION: A query nested inside another query (main/outer query).
+ * PURPOSE: Break down complex tasks into logical, manageable steps.
+ * 
+ * TYPES BY DEPENDENCY:
+ * 1. Non-Correlated: Independent, executed once. (56:25)
+ * 2. Correlated: Relies on main query values, executed per row. (56:25)
+ * 
+ * USE CASES & EXAMPLES:
+ */
+
+-- 1. FROM CLAUSE (Creating temporary result sets)
+-- Example: Ranking items based on aggregated data
+SELECT * 
+FROM (
+    SELECT customer_id, SUM(sales) AS total_sales 
+    FROM orders GROUP BY customer_id
+) AS T;
+
+-- 2. SELECT CLAUSE (Scalar subqueries to get single values)
+-- Example: Showing total orders count next to product details
+SELECT product_name, 
+   (SELECT COUNT(*) FROM orders ) AS total_orders
+FROM products p;
+
+SELECT product_name, 
+   (SELECT COUNT(*) FROM orders WHERE product_id = p.product_id ) AS total_orders
+FROM products p;
+
+-- 3. WHERE CLAUSE (Filtering with IN/ANY/ALL)
+-- Example: Filtering based on a list of values
+
+SELECT * FROM orders 
+WHERE customer_id IN (SELECT customer_id FROM customers WHERE country = 'Germany');
+
+
+SELECT * FROM orders 
+WHERE customer_id NOT ANY (SELECT customer_id FROM customers WHERE country = 'Germany');
+
+
+SELECT * FROM orders 
+WHERE score < (SELECT avg() FROM customers);
+
+-- 4. WHERE CLAUSE (EXISTS operator for correlated checks)
+-- Example: Checking if a customer has placed any orders
+SELECT * FROM customers c
+WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.customer_id);
+
+/* 
+ * IMPORTANT NOTES:
+ * - Scalar subqueries MUST return exactly one value if used in SELECT. (24:08)
+ * - SQL Server requires an alias for subqueries in the FROM clause. (11:38)
+ * - Correlated subqueries are slower as they run for every row in the outer query. (1:06:13)
+ * - Use parenthesis () to encapsulate all subqueries. (1:22)
+ * - Debugging Tip: Highlight the subquery code block and execute to see intermediate results. (16:13)
+ */
+
+ --Practice Exercice ! 
+
+ --Write a query that tracks customer purchasing habits over time
+ select * FROM orders
+/* so according to what i see i think i get to group each costumer orders into different windows , then i think i will exclude the peding orders from it  , so after that i got to do along with the partition an aggregation for the total amount then i must do a comparistion for the customer purchases ( first one and last one i think ) , and also i must calculate the arevage time the costumer took to place a second order ( it can be null since we gonna use lag ) , well we need a field that has a first purchase amount , also a field for amount_change means the diffrence between the current order and the , also 
+amount_change
+*/
+--lets gooooooo ! 
+
+use [Sales.db]
+
+select 
+t.OrdeRank , 
+t.customer_id,
+t.order_date, 
+t.nextOrderDate,
+cast(datediff(day , order_date , nextOrderDate) as varchar) + ' day'as SinceLastOrder ,
+t.total_amount ,
+Round(t.ArvSpend , 2 ) as ArvSpend,
+t.prevouisAmount - t.total_amount as amount_change ,
+t.first_order_amount
+from (
+select 
+      ROW_NUMBER() over(PARTITION BY customer_id order by order_date asc) as  OrdeRank
+      ,[customer_id]
+      ,[order_date],
+      lead(order_date) over(PARTITION BY customer_id order by order_date) as nextOrderDate
+      ,[total_amount],
+      lag(total_amount) over(PARTITION BY customer_id order by order_date) as prevouisAmount ,
+      FIRST_VALUE(total_amount) over(PARTITION BY customer_id order by order_date asc) as first_order_amount
+      ,[status] ,
+      avg(ISNULL(total_amount , 0)) over(PARTITION BY customer_id) as ArvSpend
+from orders 
+where status = 'Completed' 
+) as t ;
+
+--second exercice !
+--A correlated subquery executes once for every single row processed by the outer query.
+
+select o.customer_id , o.total_amount
+from orders as o
+where total_amount >= (
+   select 
+   avg(ISNULL(total_amount , 0)) as ArvSpend
+   from orders WHERE customer_id = o.customer_id 
+   --added DISTINCT cuz its currently returning 3 rows or more with same value while i need only one row with one value (in over version not this one )
+) ;
+
+/* ============================================================================
+   SQL CONTROLLER PATTERNS & QUICK REFERENCE
+   ============================================================================
+
+   1. WHERE 1=1 (Dynamic Query Anchor)
+   ----------------------------------------------------------------------------
+   - Purpose: Acts as a neutral condition that is always TRUE.
+   - Why use it: Simplifies dynamic query construction in backend code (e.g., Express).
+   - Benefit: Allows every optional filter condition to safely begin with "AND ...",
+     eliminating extra IF checks to see if "WHERE" was already included.
+   - Performance: Zero impact; the query optimizer ignores 1=1 automatically.
+
+   2. LIKE @searchTerm (Pattern Matching / Partial Search)
+   ----------------------------------------------------------------------------
+   - Purpose: Performs partial text searches (e.g., search bars returning partial matches).
+   - Wildcards:
+       '%' -> Matches zero or more characters.
+       '_' -> Matches exactly one character.
+   - Security Tip: Pass wildcards through parameterized inputs in JavaScript:
+       request.input('searchTerm', sql.VarChar, `%${search}%`);
+     Never concatenate `%` directly inside raw query strings to prevent SQL Injection.
+
+   3. OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY (Pagination)
+   ----------------------------------------------------------------------------
+   - Purpose: Implements API pagination by skipping and retrieving specific row sets.
+   - Mechanics:
+       OFFSET @offset ROWS         --> Skips the specified number of rows.
+       FETCH NEXT @limit ROWS ONLY   --> Takes only the next batch of rows.
+   - Math Formula:
+       offset = (currentPage - 1) * limit
+   - Golden Rule: SQL Server REQUIRES an 'ORDER BY' clause when using OFFSET / FETCH NEXT.
+
+   ============================================================================ */
+
+--SQL Course 28 - Data with Baraa
+/*
+========================================================================
+SQL CTE (Common Table Expression) - Comprehensive Guide
+Based on: SQL Course 28 - Data with Baraa
+========================================================================
+
+1. WHAT IS A CTE?
+   - A Common Table Expression (CTE) is a temporary named result set.
+   - Think of it as a virtual table that exists only during the execution 
+     of a single query.
+   - Purpose: Simplify, organize, and improve readability of complex queries.
+   - Unlike subqueries (which are often bottom-up), CTEs are written top-down,
+     making them more modular and easier to debug.
+
+2. KEY ADVANTAGES:
+   - Readability: Breaks complex queries into small, logical sections.
+   - Modularity: Each CTE handles a specific piece of the logic.
+   - Reusability: You can reference the same CTE multiple times within 
+     the main query, unlike standard subqueries.
+
+3. TYPES OF CTEs:
+
+   A. STANDALONE CTE (Non-Recursive)
+      - Executed once; independent from other CTEs.
+      - Syntax:
+        WITH CTE_Name AS (
+            SELECT ... FROM ...
+        )
+        SELECT * FROM CTE_Name;
+
+   B. MULTIPLE CTEs
+      - Use commas to separate definitions. Only the first needs the 'WITH' keyword.
+      - Syntax:
+        WITH CTE1 AS (SELECT ...),
+             CTE2 AS (SELECT ... FROM CTE1)
+        SELECT * FROM CTE1 JOIN CTE2 ...;
+
+   C. NESTED CTE
+      - A CTE that references a previous CTE within the same query.
+      - Reduces redundancy by building a chain of logic.
+
+   D. RECURSIVE CTE
+      - Uses self-reference to loop/iterate until a condition is met.
+      - Use Case: Hierarchical data (e.g., employee-manager structures).
+      - Structure: Anchor Member (initial select) + UNION ALL + Recursive Member.
+      - Important: Always define a breaking condition to avoid infinite loops.
+      - Limitation: Max default recursions in SQL Server is 100 (can override 
+        with OPTION (MAXRECURSION n)).
+
+4. BEST PRACTICES & TIPS:
+   - Refactoring: Aim for 3-5 CTEs per query. If more than 5, consider if 
+     the query is too complex and needs to be split or turned into a View.
+   - Cleanup: SQL automatically destroys the virtual table once the query 
+     finishes.
+   - Execution: The DB engine caches the CTE result in memory for use by 
+     subsequent steps in the main query.
+
+========================================================================
+*/
+
+-- Example of a basic Recursive CTE (Number Sequence 1 to 20)
+WITH RECURSIVE_SEQ AS (
+    -- Anchor Query
+    SELECT 1 AS my_number
+    UNION ALL
+    -- Recursive Query
+    SELECT my_number + 1
+    FROM RECURSIVE_SEQ
+    WHERE my_number < 20 -- Break condition
+)
+SELECT * FROM RECURSIVE_SEQ
+OPTION (MAXRECURSION 100);
+
+-- exercice for CTES !! :
+
+with total_amount_purchase as (
+   --so here we got to calculate the amount and do partition by customer_id !!
+ select 
+ customer_id,
+ MONTH(order_date) as date_Month,
+ sum(isnull(total_amount , 0)) as consuming,
+ count(customer_id)  as order_count
+ from orders
+ GROUP BY customer_id , Month(order_date)
+) 
+--the main querie !
+select * 
+from total_amount_purchase 
+where consuming >= 500;
+
+--Done 
+--Exercice 02 !!:
+
+with CustomerTotals as (
+   --we have to do two things , total spend and order count for each customer !
+   select 
+   customer_id ,
+   sum(isnull(total_amount , 0)) as totalSpend ,
+   count(1) as orderCount
+   from orders
+   GROUP BY customer_id
+) ,
+CompanyAverage as (
+   --overall average spend from CustomerTotals !
+   Select 
+   avg(isnull(totalSpend , 0) ) as overAllAverge 
+   from CustomerTotals
+)
+select 
+*
+from CustomerTotals as c
+WHERE totalSpend > (SELECT overAllAverge FROM CompanyAverage);
+
+--Done 
+--Exercice 3 !:
+-- Setup Employees Table
+CREATE TABLE employees (
+    emp_id INT PRIMARY KEY,
+    emp_name VARCHAR(50),
+    manager_id INT NULL
+);
+
+INSERT INTO employees VALUES
+(1, 'Amine (CEO)', NULL),
+(2, 'Sarah (VP of Tech)', 1),
+(3, 'Karim (VP of Sales)', 1),
+(4, 'Yacine (Senior Dev)', 2),
+(5, 'Lina (Junior Dev)', 4);
+
+--RECURSIVE CTES !:!
+WITH OrgHierarchy as (
+ --anchor querie !
+ select 
+ emp_id ,
+ emp_name,
+ manager_id,
+ 1 as "level"
+ from employees
+ where manager_id is null 
+
+--recursive querie :
+--so here we got to treat it as a loop more then the idea of a recusive function in programming, cuz the behaver matches more the loop onee , so the mean objective is to list each employee with an addition info which is level , if he didnt tell u that u will use recursive querie u may think about using window function firstly then u will understand that its impossible in this case , cuz the level info is not something that can be extructed using window function or any other function and from a programmer prespactive this will look more like a binnary tree and we do deal with this kind of problems usaully with recursive functions , and here we can use a loop so each time we bring the current value which is the emp id and manager id and we have to look for the employes that has this emp id as an manager id if so then we gonna insert them and increasing their lvl comparing to the first value ( the lvl 1 is for the COE) so in order to do that we have first to get out the idea of union all set cuz it will do the job of inserting in each repetion , so we have to focus more on what is below it which is the use of inner join in order to do this task , why inner join and between who and who ? , so we gonna join the table values with the the cte querie , each time the cte querie will pass to it the recursive value not the anchor value , so we are joining the recursing value with the full emp table , then we need to set the condition which is : on recursive.emp_id = tableOfEmpolyees_manager_id then at this case that means that join only the rows that matches , the manager id of the employeer needs to match the employer id from the recusive table , and we will add to the result a lvl info ( lvl + 1 (lvl is passed first of all by the anchor querie ) ) so in each repition we gonna have only the common rows that verify this condition of the inner join and also the result of each repetion will be Joined using Union all so it look how it must look so the recusive part is the one who is doing every thing starting from the first value and ending to the last value !
+
+UNION ALL 
+
+select 
+ e.emp_id ,
+ e.emp_name,
+ e.manager_id,
+ level + 1 as "level"
+from employees AS e
+INNER JOIN OrgHierarchy as o
+on o.emp_id = e.manager_id
+
+)
+SELECT *
+from OrgHierarchy
+
+SELECT *
+FROM employees
