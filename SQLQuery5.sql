@@ -1094,3 +1094,111 @@ Views act as an abstraction layer (10:57). They enhance security,
 reusability, and maintainability by allowing you to change underlying 
 physical tables without breaking downstream reports or applications.
 */
+
+--SQL CTAS | How to Create SQL Tables From a Query | #SQL Course 30 
+
+/*
+==============================================================================
+SQL CTAS (CREATE TABLE AS SELECT) - MASTER SUMMARY
+==============================================================================
+
+1. WHAT ARE TABLES? (00:20 - 03:05)
+   - Database objects (logical level) representing structured data grids (rows/columns).
+   - Physically stored in database files on disk, abstracted from the user.
+   - Database architecture: Physical (files) -> Logical (tables/views) -> Conceptual.
+
+2. TABLE TYPES (03:05 - 03:52)
+   - Permanent: Persist until dropped.
+   - Temporary: Deleted automatically at the end of the session.
+
+3. CREATION METHODS (03:52 - 06:36)
+   - CREATE/INSERT (Classical): 
+     Step 1: CREATE TABLE (Define structure - empty shell).
+     Step 2: INSERT INTO (Populate with data from sources like CSV/migration).
+   - CTAS (CREATE TABLE AS SELECT): 
+     Single step: Database executes query, creates table, and populates simultaneously.
+
+4. CTAS VS. VIEWS (06:36 - 11:26)
+   - Views: Dynamic, no storage, query runs every time accessed (slower, always fresh).
+   - CTAS: Persists query results, data stays static until re-run (faster, fixed snapshot).
+   - Analogy: View = Fresh pizza made to order; CTAS = Frozen pizza in the freezer.
+
+5. CTAS SYNTAX (11:26 - 14:10)
+   - Standard (MySQL/Postgres/Oracle): 
+     CREATE TABLE new_table AS SELECT * FROM old_table;
+   - SQL Server (T-SQL):
+     SELECT * INTO new_table FROM old_table;
+
+6. USE CASES (14:10 - 25:59)
+   #1 Performance Optimization (14:10): Replace slow/complex views with materialized 
+      tables to avoid repeated expensive calculations.
+   #2 Creating Snapshots (21:49): Capture fixed data states to troubleshoot 
+      data quality issues without fear of underlying table changes.
+   #3 Physical Data Marts (23:15): Speed up DWH reporting layers by materializing 
+      data marts as physical tables rather than slow virtual views.
+
+7. MAINTENANCE & REFRESH (19:42 - 21:49)
+   - To refresh a CTAS table, use T-SQL logic to avoid 'Table Exists' errors:
+   IF OBJECT_ID('sales.monthly_orders', 'U') IS NOT NULL 
+       DROP TABLE sales.monthly_orders;
+   SELECT ... INTO sales.monthly_orders FROM ...;
+==============================================================================
+*/
+select *
+into ordersBackUp
+from orders ;
+
+select *
+from ordersBackUp
+
+
+select *
+from orders
+
+if OBJECT_id('dbo.ordersBackUp' , 'U') is not null
+drop table ordersBackUp 
+GO
+select *
+into ordersBackUp
+from orders
+
+--SQL Temp Tables (Visually Explained) | #SQL Course 31 
+/* 
+ * SQL TEMPORARY TABLES SUMMARY
+ * 
+ * 1. DEFINITION (0:18):
+ * Temporary tables act as a workspace for intermediate query results.
+ * Unlike permanent tables, they exist only for the duration of a session.
+ * 
+ * 2. LIFECYCLE (1:11):
+ * - Permanent: Live until explicitly dropped.
+ * - Temporary: Automatically dropped by the DB when the session ends.
+ * 
+ * 3. SYNTAX (02:19):
+ * Use a '#' prefix to define a temporary table.
+ */
+
+-- Creating a temp table from an existing query
+SELECT * 
+INTO #Orders 
+FROM Sales.Orders;
+
+-- 4. MANIPULATION (05:43):
+-- You can treat #temp tables like standard tables for filtering/cleaning
+DELETE FROM #Orders 
+WHERE OrderStatus = 'Delivered';
+
+-- 5. PERSISTING RESULTS (06:46):
+-- Move processed data from temp storage back to a permanent table
+SELECT * 
+INTO Sales.Orders_Test 
+FROM #Orders;
+
+/* 
+ * 6. STORAGE (09:02):
+ * Temp tables are physically stored in the system 'tempdb' database.
+ * 
+ * 7. BEST PRACTICES (13:16):
+ * - Use for intermediate ETL transformations or complex debugging.
+ * - Alternatives like CTEs or Views are often preferred for simpler logic.
+ */
