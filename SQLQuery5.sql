@@ -1202,3 +1202,1584 @@ FROM #Orders;
  * - Use for intermediate ETL transformations or complex debugging.
  * - Alternatives like CTEs or Views are often preferred for simpler logic.
  */
+
+
+--this is an indexed querie and we have two type : cluster indexing and non cluster indexing the diffrent is that the non cluster indexed has one or more then one additionel layer in the b tree of that summeries the structure of the data in the page files according to a index like id or somthing , and also the cluster indexing has a sorted page files according to the index choosed like id , while the non cluster indexing has a catalog in the last intermidiat layer has a full catalog of where serten values exist but its random , and also the page files contain unsorted data !
+SELECT order_id
+FROM Orders
+where order_id = 1007
+
+--this is a non indexed querie so the engine have to read all page files row by row in order to find the exect id we are looking for , and that is slow as hell in reading but fast in writting . 
+SELECT order_id
+from ordersBackUp
+where order_id = 1007
+
+
+
+/*
+============================================================
+SQL SERVER INDEXING — STRUCTURE
+HEAP vs CLUSTERED vs NONCLUSTERED
+============================================================
+
+MAIN IDEA
+---------
+Do NOT think of Heap / Clustered / Nonclustered as three
+competing index types.
+
+The important question is:
+
+    How is the table structurally organized,
+    and where do additional indexes fit around it?
+
+
+============================================================
+1. TABLE BASE STRUCTURE
+============================================================
+
+In rowstore, a table can fundamentally be:
+
+    TABLE
+      |
+      +-- HEAP
+      |
+      +-- CLUSTERED INDEX
+
+A table is either:
+
+    A) HEAP
+       -> No clustered index
+
+    B) CLUSTERED TABLE
+       -> Has one clustered index
+
+
+------------------------------------------------------------
+A) HEAP
+------------------------------------------------------------
+
+A heap is simply:
+
+    A table WITHOUT a clustered index.
+
+Example:
+
+    CREATE TABLE Logs
+    (
+        id INT,
+        message VARCHAR(500),
+        created_at DATETIME
+    );
+
+If no clustered index is created:
+
+    Logs
+      |
+      +-- HEAP
+
+A heap is NOT automatically bad.
+It can be an intentional design.
+
+IMPORTANT:
+A heap can still have nonclustered indexes.
+
+
+------------------------------------------------------------
+B) CLUSTERED TABLE
+------------------------------------------------------------
+
+Example:
+
+    CREATE TABLE Users
+    (
+        id INT PRIMARY KEY,
+        name VARCHAR(50),
+        age INT
+    );
+
+In SQL Server, PRIMARY KEY normally creates a clustered
+index by default if possible and if no clustered index
+already exists.
+
+Conceptually:
+
+    Users
+      |
+      +-- Clustered Index on id
+              |
+              +-- table rows
+
+
+============================================================
+2. NONCLUSTERED INDEXES ARE ADDITIONAL STRUCTURES
+============================================================
+
+A table can have:
+
+    0 or 1 clustered index
+    +
+    multiple nonclustered indexes
+
+Example:
+
+    CREATE CLUSTERED INDEX CX_Users_Id
+    ON Users(id);
+
+    CREATE NONCLUSTERED INDEX IX_Users_Email
+    ON Users(email);
+
+Conceptually:
+
+                        Users
+                          |
+                +---------+---------+
+                |                   |
+         Clustered Index      Nonclustered Index
+             on id                on email
+                |                   |
+                v                   v
+           actual rows         index entries
+
+
+YES:
+A table can have BOTH a clustered index and
+multiple nonclustered indexes.
+
+This is extremely common.
+
+
+============================================================
+3. WHY HAVE BOTH?
+============================================================
+
+Different queries may search the table using different columns.
+
+Example:
+
+    SELECT *
+    FROM Users
+    WHERE id = 500000;
+
+A clustered index on id can be useful.
+
+But:
+
+    SELECT *
+    FROM Users
+    WHERE email = 'x@gmail.com';
+
+The id index does not directly help with searching by email.
+
+So we can create:
+
+    CREATE NONCLUSTERED INDEX IX_Users_Email
+    ON Users(email);
+
+Now SQL Server has another access path to the table.
+
+Think of indexes as different "roads" to the same table:
+
+                    USERS TABLE
+                        |
+            +-----------+-----------+
+            |           |           |
+           id         email      username
+            |           |           |
+          Road A      Road B      Road C
+
+Each index provides an access path based on a particular
+query pattern.
+
+
+============================================================
+4. WHAT DOES A NONCLUSTERED INDEX CONTAIN?
+============================================================
+
+A nonclustered index contains its indexed key plus a
+row locator.
+
+Example:
+
+    Users
+
+    id      name       email
+    ------------------------------
+    1       Ali        ali@gmail.com
+    2       Sara       sara@gmail.com
+    3       Mohamed    mohamed@gmail.com
+
+Index:
+
+    CREATE INDEX IX_Users_Email
+    ON Users(email);
+
+
+Conceptually:
+
+    Nonclustered Index
+
+    email                  locator
+    --------------------------------
+    ali@gmail.com           ...
+    mohamed@gmail.com       ...
+    sara@gmail.com          ...
+
+
+The locator depends on whether the table is a HEAP or
+has a CLUSTERED INDEX.
+
+
+============================================================
+5. NONCLUSTERED INDEX + HEAP
+============================================================
+
+If the table is a heap:
+
+    Users
+      |
+      +-- HEAP
+
+    Nonclustered Index
+      |
+      +-- email
+
+The nonclustered index uses a RID
+(Row Identifier) to locate the actual row.
+
+Conceptually:
+
+    Email Index
+         |
+         | RID
+         v
+      HEAP ROW
+
+
+So:
+
+    Nonclustered Index
+            |
+            +-- email
+            |
+            +-- RID
+                     |
+                     v
+                  heap row
+
+
+============================================================
+6. NONCLUSTERED INDEX + CLUSTERED TABLE
+============================================================
+
+Suppose:
+
+    Users
+      |
+      +-- Clustered Index on id
+
+and:
+
+    Nonclustered Index on email
+
+The nonclustered index generally uses the clustered key
+as its row locator.
+
+Conceptually:
+
+    Nonclustered Email Index
+
+    email                  id
+    ---------------------------
+    ali@gmail.com           1
+    mohamed@gmail.com       3
+    sara@gmail.com          2
+
+
+Then:
+
+    Email Index
+         |
+         | clustered key
+         v
+    Clustered Index
+         |
+         v
+    Actual Row
+
+
+IMPORTANT:
+
+With a HEAP:
+
+    Nonclustered Index -> RID -> row
+
+With a CLUSTERED TABLE:
+
+    Nonclustered Index -> clustered key -> row
+
+
+============================================================
+7. EXAMPLE OF USING BOTH INDEXES
+============================================================
+
+    CREATE CLUSTERED INDEX CX_Users_Id
+    ON Users(id);
+
+    CREATE NONCLUSTERED INDEX IX_Users_Email
+    ON Users(email);
+
+
+Query:
+
+    SELECT *
+    FROM Users
+    WHERE email = 'mohamed@gmail.com';
+
+
+Conceptually SQL Server may do:
+
+    1. Search Email index
+            |
+            v
+    2. Find email
+            |
+            v
+    3. Get clustered key
+            |
+            v
+    4. Go to clustered index
+            |
+            v
+    5. Find actual row
+            |
+            v
+    6. Return complete row
+
+
+When a nonclustered index finds the row locator but
+does not contain everything required by the query,
+SQL Server may perform a KEY LOOKUP.
+
+
+============================================================
+8. WHY A NONCLUSTERED INDEX IS NOT AUTOMATICALLY MAGIC
+============================================================
+
+Example:
+
+    SELECT *
+    FROM Users
+    WHERE email = 'mohamed@gmail.com';
+
+
+The email index may find:
+
+    email -> clustered key
+
+But SELECT * requires the complete row.
+
+Therefore SQL Server may need:
+
+    clustered key -> entire row
+
+If a query returns a large number of rows, performing many
+lookups can become expensive.
+
+Therefore:
+
+    DO NOT think:
+        "Put an index on everything."
+
+Instead think:
+
+    "What access patterns does my workload need?"
+
+
+============================================================
+9. NUMBER OF INDEXES
+============================================================
+
+CLUSTERED:
+
+    Maximum = 1 per table
+
+Why?
+
+Because the clustered index defines the table's
+clustered rowstore organization.
+
+You cannot have:
+
+    clustered by id
+    AND
+    clustered by email
+
+at the same time.
+
+
+NONCLUSTERED:
+
+    Multiple nonclustered indexes are possible.
+
+Example:
+
+    Users
+      |
+      +-- Clustered Index -> id
+      |
+      +-- Nonclustered -> email
+      |
+      +-- Nonclustered -> username
+      |
+      +-- Nonclustered -> age
+      |
+      +-- Nonclustered -> created_at
+
+
+============================================================
+10. ALL VALID BASIC STRUCTURES
+============================================================
+
+CASE 1:
+
+    HEAP
+
+
+CASE 2:
+
+    CLUSTERED TABLE
+
+
+CASE 3:
+
+    HEAP
+      |
+      +-- Nonclustered Index
+      +-- Nonclustered Index
+      +-- Nonclustered Index
+
+
+CASE 4:
+
+    CLUSTERED TABLE
+      |
+      +-- Nonclustered Index
+      +-- Nonclustered Index
+      +-- Nonclustered Index
+
+CASE 4 is extremely common.
+
+
+============================================================
+11. ACTUAL ROLE OF A CLUSTERED INDEX
+============================================================
+
+Do NOT think:
+
+    "Clustered = faster"
+
+This is too simplistic.
+
+Better definition:
+
+    A clustered index defines the table's clustered
+    rowstore organization around a key and provides
+    an ordered B-tree access path to those rows.
+
+
+It can be useful for queries such as:
+
+    WHERE id = 500
+
+    WHERE id BETWEEN 500 AND 600
+
+    ORDER BY id
+
+and other queries that match the clustered key's
+access pattern.
+
+
+============================================================
+12. CLUSTERED INDEX DOES NOT GUARANTEE SELECT ORDER
+============================================================
+
+This:
+
+    SELECT *
+    FROM Users;
+
+does NOT guarantee that rows will be returned as:
+
+    1
+    2
+    3
+    4
+    5
+    ...
+
+
+Even if id is the clustered key.
+
+If a specific order is required:
+
+    SELECT *
+    FROM Users
+    ORDER BY id;
+
+
+ORDER BY is what guarantees the result order.
+
+
+============================================================
+13. HEAP VS CLUSTERED — SEARCHING
+============================================================
+
+Suppose there are 10 million rows.
+
+HEAP:
+
+    Users
+      |
+      +-- 10M rows
+
+
+If:
+
+    SELECT *
+    FROM Users
+    WHERE id = 8492123;
+
+and there is no useful index, SQL Server may need to
+scan many/all rows.
+
+This can be expensive.
+
+
+CLUSTERED:
+
+    Users
+      |
+      +-- Clustered B-tree on id
+
+
+SQL Server can navigate the B-tree to find the desired
+key instead of checking every row.
+
+This is the fundamental power of an index.
+
+
+============================================================
+14. HEAP CAN STILL BE FAST
+============================================================
+
+Example:
+
+    SELECT *
+    FROM Logs;
+
+
+If we need EVERY row, an index may not provide much benefit.
+
+SQL Server may simply scan the heap:
+
+    HEAP
+      |
+      +-- read all rows
+
+
+Similarly, scanning a clustered table can be efficient.
+
+Therefore:
+
+    INDEXED TABLE != ALWAYS FASTER
+    HEAP != ALWAYS SLOW
+
+
+For full-table reads, a scan can be the correct choice.
+
+
+============================================================
+15. SEEK VS SCAN
+============================================================
+
+INDEX SEEK:
+
+    SQL Server navigates an index to find specific rows.
+
+        Index
+          |
+          v
+       target
+          |
+          v
+      small amount of data
+
+
+Example:
+
+    WHERE id = 500
+
+
+SCAN:
+
+    SQL Server reads a large part or all of a structure.
+
+        Index/Table
+             |
+             v
+        vvvvvvvvvv
+        many rows
+
+
+Example:
+
+    SELECT *
+    FROM Users;
+
+
+IMPORTANT:
+
+    Seek != always good
+    Scan != always bad
+
+If a query needs a very large percentage of the table,
+a scan may be more efficient than many individual lookups.
+
+
+============================================================
+16. CHOOSING A CLUSTERED KEY
+============================================================
+
+A clustered key should be chosen based on workload.
+
+Useful characteristics can include:
+
+    1. Frequently used for searches/ranges/order
+
+       WHERE created_at BETWEEN ...
+
+
+    2. Frequently used to identify/access rows
+
+       WHERE id = ?
+
+
+    3. Preferably narrow
+
+Why?
+
+Because the clustered key can be carried into
+nonclustered indexes as their row locator.
+
+Example:
+
+    id INT
+
+is much smaller than:
+
+    description VARCHAR(1000)
+
+
+A large clustered key can make nonclustered indexes
+larger.
+
+
+============================================================
+17. NARROW CLUSTERED KEY
+============================================================
+
+Example:
+
+    Clustered key = INT
+
+Nonclustered index conceptually:
+
+    email -> INT
+
+Small locator.
+
+
+But:
+
+    Clustered key = VARCHAR(500)
+
+Nonclustered index:
+
+    email -> VARCHAR(500)
+
+The locator is much larger.
+
+Therefore a narrow clustered key is often desirable.
+
+A common design in conventional OLTP systems is:
+
+    id INT IDENTITY PRIMARY KEY
+
+But this is NOT a universal rule.
+
+The best clustered key depends on the workload.
+
+
+============================================================
+18. SEQUENTIAL VS RANDOM CLUSTERED KEYS
+============================================================
+
+Sequential key:
+
+    1
+    2
+    3
+    4
+    5
+    6
+    ...
+
+
+New rows usually arrive near the end of the structure.
+
+This can be friendly to insert workloads.
+
+
+Random key:
+
+    827391
+    14
+    93821
+    401
+    78231
+    ...
+
+
+New rows can need insertion into different parts of
+the clustered structure.
+
+This can contribute to page splits and fragmentation.
+
+This is one reason sequential keys are often attractive
+for clustered indexes in write-heavy OLTP systems.
+
+Again:
+
+    Workload matters.
+
+
+============================================================
+19. PRIMARY KEY != CLUSTERED INDEX
+============================================================
+
+These concepts are different.
+
+PRIMARY KEY:
+
+    Defines a constraint that uniquely identifies rows.
+
+CLUSTERED INDEX:
+
+    Defines the table's clustered rowstore structure.
+
+
+A primary key can be NONCLUSTERED.
+
+Example:
+
+    CREATE TABLE Users
+    (
+        id INT PRIMARY KEY NONCLUSTERED,
+        created_at DATETIME
+    );
+
+
+Then separately:
+
+    CREATE CLUSTERED INDEX CX_Users_CreatedAt
+    ON Users(created_at);
+
+
+Conceptually:
+
+    Users
+      |
+      +-- Clustered Index
+      |      |
+      |      +-- created_at
+      |
+      +-- Nonclustered Primary Key
+             |
+             +-- id
+
+
+Therefore:
+
+    PRIMARY KEY
+        !=
+    CLUSTERED INDEX
+
+
+SQL Server normally defaults a primary key to clustered
+when possible if you do not specify otherwise.
+
+
+============================================================
+20. UNIQUE AND CLUSTERED ARE DIFFERENT PROPERTIES
+============================================================
+
+Example:
+
+    CREATE UNIQUE CLUSTERED INDEX CX_Users_Email
+    ON Users(email);
+
+
+Here:
+
+    UNIQUE
+        -> controls duplicate key values
+
+    CLUSTERED
+        -> describes the table's clustered structure
+
+
+They answer different questions.
+
+Therefore, properties/features can overlap with
+the structural classification.
+
+
+============================================================
+21. REALISTIC TABLE DESIGN
+============================================================
+
+Example:
+
+    Users
+      |
+      +-- Clustered Index on UserID
+      |
+      +-- Unique Nonclustered Index on Email
+      |
+      +-- Unique Nonclustered Index on Username
+      |
+      +-- Nonclustered Index on CreatedAt
+
+
+SQL:
+
+    CREATE CLUSTERED INDEX CX_Users_UserID
+    ON Users(UserID);
+
+    CREATE UNIQUE NONCLUSTERED INDEX UX_Users_Email
+    ON Users(Email);
+
+    CREATE UNIQUE NONCLUSTERED INDEX UX_Users_Username
+    ON Users(Username);
+
+    CREATE NONCLUSTERED INDEX IX_Users_CreatedAt
+    ON Users(CreatedAt);
+
+
+This is completely valid.
+
+
+============================================================
+22. WHY NOT INDEX EVERY COLUMN?
+============================================================
+
+Indexes improve some reads, but they have costs.
+
+Every additional index can require:
+
+    - Disk space
+    - Memory/cache
+    - CPU
+    - Maintenance
+    - INSERT overhead
+    - UPDATE overhead
+    - DELETE overhead
+
+
+Example:
+
+Without indexes:
+
+    INSERT
+      |
+      v
+    done
+
+
+With several indexes:
+
+    INSERT
+      |
+      +-- update clustered structure
+      |
+      +-- update index #1
+      |
+      +-- update index #2
+      |
+      +-- update index #3
+      |
+      +-- ...
+
+
+Therefore:
+
+    An index should exist because the workload
+    benefits from it.
+
+NOT:
+
+    "This column exists, so index it."
+
+
+============================================================
+23. THINK ABOUT THE WORKLOAD
+============================================================
+
+Do NOT think:
+
+    "This column is important -> create index."
+
+
+Think:
+
+    "What queries does my application actually execute?"
+
+
+Example:
+
+    SELECT *
+    FROM Users
+    WHERE email = @email;
+
+
+If this query is common:
+
+    CREATE INDEX IX_Users_Email
+    ON Users(email);
+
+
+This makes sense because the index matches
+the actual access pattern.
+
+
+But if nobody searches using:
+
+    WHERE age = ...
+
+then an index on age may provide little benefit.
+
+
+============================================================
+24. COMPOSITE / MULTICOLUMN INDEXES
+============================================================
+
+Example query:
+
+    SELECT *
+    FROM Orders
+    WHERE customer_id = 50
+      AND order_date >= '2026-01-01';
+
+
+Instead of automatically creating:
+
+    index(customer_id)
+    +
+    index(order_date)
+
+
+We may consider:
+
+    CREATE INDEX IX_Orders_Customer_Date
+    ON Orders(customer_id, order_date);
+
+
+Conceptually:
+
+    customer_id
+         |
+         v
+    order_date
+         |
+         v
+    row locator
+
+
+This is called a:
+
+    Composite index
+    OR
+    Multicolumn index
+
+
+============================================================
+25. COLUMN ORDER IN COMPOSITE INDEXES MATTERS
+============================================================
+
+These are NOT equivalent:
+
+    (customer_id, order_date)
+
+and:
+
+    (order_date, customer_id)
+
+
+If the index is:
+
+    (customer_id, order_date)
+
+
+It is naturally useful for:
+
+    WHERE customer_id = 50
+
+
+and:
+
+    WHERE customer_id = 50
+      AND order_date >= ...
+
+
+But it is not automatically equally useful for:
+
+    WHERE order_date >= ...
+
+
+This is related to the concept of
+index prefixes / leading columns.
+
+
+============================================================
+26. COVERING INDEXES
+============================================================
+
+Example:
+
+    SELECT name, email
+    FROM Users
+    WHERE username = 'mohamed';
+
+
+Basic index:
+
+    CREATE INDEX IX_Users_Username
+    ON Users(username);
+
+
+The index can find the username, but SQL Server may
+still need to access the clustered table to retrieve:
+
+    name
+    email
+
+
+A covering index can sometimes include those columns:
+
+    CREATE INDEX IX_Users_Username
+    ON Users(username)
+    INCLUDE (name, email);
+
+
+Conceptually:
+
+    Index
+    -----------------
+    username
+    name
+    email
+    -----------------
+
+
+SQL Server may then answer the query directly from
+the index without performing a lookup.
+
+But:
+
+    INCLUDE columns also increase index size
+    and maintenance cost.
+
+Do not add them blindly.
+
+
+============================================================
+27. COMPLETE BASIC MENTAL MODEL
+============================================================
+
+                     ROWSTORE TABLE
+                           |
+              +------------+------------+
+              |                         |
+            HEAP                 CLUSTERED TABLE
+              |                         |
+       No clustered index        1 clustered index
+              |                         |
+              +------------+------------+
+                           |
+                     NONCLUSTERED
+                        INDEXES
+                           |
+                  +--------+--------+
+                  |        |        |
+                Email   Username   Date
+
+
+Think about three questions:
+
+    QUESTION 1 — STRUCTURE
+    ----------------------
+    Does the table have a clustered index?
+
+        No  -> HEAP
+        Yes -> CLUSTERED TABLE
+
+
+    QUESTION 2 — ACCESS PATHS
+    --------------------------
+    Do I need additional nonclustered indexes?
+
+        Email?
+        Username?
+        Date?
+        CustomerID?
+        etc.
+
+
+    QUESTION 3 — WORKLOAD
+    ---------------------
+    Does the index actually help the queries?
+
+        SELECT?
+        WHERE?
+        JOIN?
+        ORDER BY?
+        GROUP BY?
+
+    And what does it cost for:
+
+        INSERT?
+        UPDATE?
+        DELETE?
+
+
+This is how index design should be approached.
+
+
+============================================================
+28. CONNECTION WITH THE THREE INDEXING CATEGORIES
+============================================================
+
+INDEX
+  |
+  +-- STRUCTURE
+  |     |
+  |     +-- Heap
+  |     +-- Clustered
+  |     +-- Nonclustered
+  |
+  +-- STORAGE
+  |     |
+  |     +-- Rowstore
+  |     +-- Columnstore
+  |
+  +-- FUNCTION / FEATURES
+        |
+        +-- Unique
+        +-- Filtered
+
+
+These are NOT six mutually exclusive choices.
+
+They describe different dimensions of indexing.
+
+For example, a table can conceptually have:
+
+    Clustered rowstore index on id
+
+and:
+
+    Unique nonclustered rowstore index on email
+
+and:
+
+    Nonclustered rowstore index on created_at
+
+
+============================================================
+29. FIVE RULES TO MEMORIZE
+============================================================
+
+1. A table can have AT MOST ONE clustered index.
+
+2. A table can have ZERO clustered indexes.
+   If it has none, it is a HEAP.
+
+3. A table can have MULTIPLE nonclustered indexes.
+
+4. Clustered + nonclustered indexes on the same table
+   is completely normal.
+
+5. Indexes are NOT free speed.
+
+   They can improve reads/access patterns,
+   but they consume storage and increase
+   INSERT/UPDATE/DELETE maintenance cost.
+
+
+MOST IMPORTANT PRACTICAL RULE:
+
+    Do not ask:
+
+        "Should I index this column?"
+
+    Ask:
+
+        "What queries do I need this table
+         to perform efficiently?"
+
+
+That is the difference between memorizing indexes
+and actually designing indexes.
+--------------------------------------------------------------
+also : 
+INDEX B-TREE ORDERING
+=====================
+
+The INDEX KEY determines the B-tree ordering
+for BOTH clustered and nonclustered indexes.
+
+Example:
+
+    (email ASC, score DESC)
+
+Means:
+
+    1. Sort by email ASC
+    2. If email is equal → sort by score DESC
+
+This ordering applies to the leaf level too.
+
+CLUSTERED:
+    Leaf = actual table rows
+    Ordered by the clustered key.
+
+NONCLUSTERED:
+    Leaf = index entries + row locator
+    Ordered by the nonclustered key.
+
+So:
+
+    INDEX KEY → determines the order
+    CLUSTERED/NONCLUSTERED → determines what the leaf contains
+
+Key sentence:
+"The index key determines the B-tree ordering;
+clustered vs nonclustered determines the leaf contents."
+============================================================
+*/
+-- prectise !
+-- 1. Create a dummy table (Heap - no clustered index)
+CREATE TABLE dummy_users (
+    user_id INT IDENTITY(1,1),
+    email VARCHAR(100),
+    user_status VARCHAR(20),
+    signup_date DATETIME
+);
+
+-- 2. Populate with 50,000 rows
+INSERT INTO dummy_users (email, user_status, signup_date)
+SELECT TOP (50000)
+    'user_' + CAST(ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) AS VARCHAR) + '@example.com',
+    CASE WHEN ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) % 3 = 0 THEN 'Active' ELSE 'Inactive' END,
+    DATEADD(day, - (ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) % 365), GETDATE())
+FROM sys.all_columns a CROSS JOIN sys.all_columns b;
+
+select email
+from dummy_users
+--arevage 100ms/118ms (btw the user_id is not indexed cuz its not defined as the primary key or unique key so u know what the system engine has to do alot of job to find the exact value of the email we are looking for !)
+
+
+-- first lets set up the statistics to see the difference in performance 
+SET STATISTICS IO ON;
+SET STATISTICS TIME ON;
+select *
+from dummy_users
+where email = 'user_42000@example.com'
+
+--now trying indexing !
+
+SET STATISTICS IO ON;
+SET STATISTICS TIME ON;
+create nonclustered index IX_dummy_users_email
+on dummy_users(email)
+
+--practise prevouis topics ( temp tables ) :
+--calculating total spend in a temp table and then showing the top 3 then cleaning up the temp table after that !
+
+with top_customers as (
+select 
+    dense_rank() over (order by sum( o.total_amount ) desc) as ranked,
+    o.customer_id,
+    sum ( o.total_amount ) as total_spent
+from orders as o
+group by o.customer_id
+)
+select 
+    *
+    into #temp_total_spent
+from top_customers
+where ranked <= 3 ;
+
+select * from #temp_total_spent
+drop table #temp_total_spent;
+--select into is not allowed in a subquery or a view or a cte 
+
+select *
+from orders
+inner join customers
+on orders.customer_id = customers.customer_id
+where customers.credit_score  > 100
+
+/*
+===============================================================================
+SQL SEARCH OPTIMIZATION & FULL-TEXT SEARCH (FTS) CHEAT SHEET
+
+1. THREE MAIN SEARCH PATTERNS IN PRODUCTION
+
+---
+
+PATTERN 1: EXACT & PREFIX FILTERING (B-TREE INDEXES)
+
+* Use Case: Filtering by status, category, date, exact ID, or email prefix.
+* Mechanism: Standard Non-Clustered B-Tree Index Seek.
+* Performance: Sub-millisecond (~1 ms).
+* Golden Rules:
+* Keep queries SARGable (Search Argumentable).
+* Trailing wildcards allowed (`LIKE 'john%'`).
+* Never use leading wildcards (`LIKE '%john'`) or wrap indexed columns in
+functions (`WHERE UPPER(email) = '...'`), as this forces full table scans.
+
+
+* SQL Example:
+SELECT user_id, first_name, email
+FROM users
+WHERE user_status = 'Active'
+AND email LIKE 'john%';
+
+PATTERN 2: FULL-TEXT SEARCH - BOOLEAN MATCHING (CONTAINS)
+
+* Use Case: Searching free-form text (titles, descriptions, bios) without scanning.
+* Mechanism: Inverted Full-Text Index B-Tree lookup.
+* Performance: Very fast (2 - 5 ms).
+* Behavior: Evaluates to TRUE or FALSE. Returns matching rows without scoring.
+* SQL Example:
+SELECT product_id, title, price
+FROM products
+WHERE CONTAINS((title, description), '"wireless mouse"');
+
+PATTERN 3: FULL-TEXT SEARCH - RELEVANCE SCORING (CONTAINSTABLE)
+
+* Use Case: Search bars where best matching results must be ranked at the top.
+* Mechanism: Inverted Full-Text Index lookup + BM25/TF-IDF match score calculation.
+* Performance: Fast (5 - 15 ms).
+* Behavior: Joins a virtual ranking table returning a dynamic 'RANK' column (0 to 1000).
+Ranks items containing multiple search terms higher than items containing only one.
+* SQL Example:
+SELECT p.product_id, p.title, p.price, ft.RANK AS relevance_score
+FROM products p
+INNER JOIN CONTAINSTABLE(products, (title, description), 'wireless OR mouse') AS ft
+ON p.product_id = ft.[KEY]
+ORDER BY ft.RANK DESC;
+
+---
+
+2. PERFORMANCE & PAGINATION STRATEGIES FOR FTS
+
+---
+
+* THE PERFORMANCE ISSUE:
+Calculating relevance ranks across thousands of matching text rows can waste CPU.
+* THE SOLUTION (top_n_by_rank):
+Pass a 4th parameter to CONTAINSTABLE to cap rank calculations at the engine level.
+* DYNAMIC PAGINATION FORMULA:
+top_n = offset + limit = (page - 1) * pageSize + pageSize
+Page 1 (10 per page): top_n = 10  (Calculates rank for top 10 matches only)
+Page 2 (10 per page): top_n = 20  (Calculates rank for top 20 matches only)
+Page 5 (10 per page): top_n = 50  (Calculates rank for top 50 matches only)
+* MAX SEARCH DEPTH CAP:
+To prevent malicious bots or deep pagination from draining CPU, enforce a ceiling:
+topN = Math.min(offset + limit, 500);
+* PRODUCTION PAGINATION QUERY:
+SELECT p.product_id, p.title, p.price, ft.RANK AS relevance_score
+FROM products p
+INNER JOIN CONTAINSTABLE(products, (title, description), @searchTerm, @topN) AS ft
+ON p.product_id = ft.[KEY]
+ORDER BY ft.RANK DESC
+OFFSET @offset ROWS
+FETCH NEXT @limit ROWS ONLY;
+
+---
+
+3. HOW B-TREE INDEXES INTERACT WITH FULL-TEXT SEARCH
+
+---
+
+* Clustered Index (Primary Key):
+MANDATORY for Full-Text Search. FTS stores Primary Key values in its catalog and
+uses the Clustered Index B-Tree to instantly fetch physical row data during the
+join stage (`ON p.product_id = ft.[KEY]`).
+* Non-Clustered Indexes:
+ESSENTIAL for hybrid search filtering. Used when combining free-text search with
+structured fields (e.g. `category_id`, `price`, `status`) to avoid post-FTS table scans.
+
+---
+
+4. EXPRESS / BACKEND BEST PRACTICES
+
+---
+
+* Never use `LIKE '%text%'` in production APIs (causes 100% CPU/disk Table Scans).
+* Use Non-Clustered B-Tree Indexes for structured filter criteria (IDs, categories, status).
+* Use CONTAINSTABLE for text inputs where relevance order matters.
+* Always parameterize queries (`request.input(...)`) to prevent SQL Injection.
+
+---
+
+5. CLUSTERED INDEXES, INCLUDE & HYBRID SEARCH
+
+---
+
+* THE CLUSTERED INDEX RULE:
+* A Clustered Index (Primary Key) leaf node IS the actual table data on disk.
+* You CANNOT add an `INCLUDE` clause to a Clustered Index in SQL Server
+(Attempting to do so throws error `Msg 1918`).
+* Pure Full-Text Search (`ON p.product_id = ft.[KEY]`) already fetches all row
+columns in a single $O(\log N)$ Clustered Index Seek. Adding `INCLUDE` is not
+needed or possible for pure FTS.
+
+
+* WHERE `INCLUDE` ACTUALLY HELPS IN FTS (HYBRID SEARCH):
+* When searching text AND filtering structured columns simultaneously
+(e.g., searching for "wireless" WHERE category_id = 5 AND is_active = 1).
+* Build a Non-Clustered Index on the filter columns and use `INCLUDE` for
+extra columns returned in the `SELECT` payload.
+
+
+* WHY HYBRID COVERING INDEXES BOOST PERFORMANCE:
+1. Without Non-Clustered Index: SQL Server fetches 1,000 full rows off disk
+via Primary Key, then discards 950 that don't match `category_id = 5` (Wasted I/O).
+2. With Covering Non-Clustered Index: SQL Server filters category and status
+in memory FIRST, intersecting with FTS matches with ZERO wasted disk reads.
+
+
+* HYBRID SEARCH COVERING INDEX EXAMPLE:
+-- Correct: Non-Clustered Index on filter columns + INCLUDE for output columns
+CREATE NONCLUSTERED INDEX IX_products_category_active
+ON products (category_id, is_active)
+INCLUDE (title, price, created_at);
+
+===============================================================================
+*/
+
+--practising !!
+--creating table to use in queries and testing the performance of the full text search and the ranking system !
+IF OBJECT_ID('products', 'U') IS NOT NULL DROP TABLE products;
+
+CREATE TABLE products (
+    product_id INT IDENTITY(1,1) CONSTRAINT PK_products_id PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    description VARCHAR(MAX) NOT NULL,
+    category_id INT NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    created_at DATETIME DEFAULT GETDATE()
+);
+
+-- 2. Seed 50,000 rows with overlapping search keywords
+--done
+
+select * from
+products ;
+--now the job will start with checking wather there is a catalog for the text search or not and creating it 
+
+if not exists ( select * from sys.fulltext_catalogs where name = 'fts_catalog')
+create fulltext catalog fts_catalog as default ;
+
+-- now we create out full text index on prdoucts , it required a clusterd index so we have to link it to the pk of the products then specifying which colums we want to include in in the search terget :
+--well i will terget the description and the title columns , with default language as english ! :
+
+create fulltext index on products( title , description ) key index 
+PK_products_id
+with stoplist = system ;
+
+-- now the search index is ready to be used , lets test it with a simple query to see if it works and how fast it is : (btw we can also add like more condition to the search query and it will be faster cuz here we have clusted index on the primary key so the access of data will be faster .)
+
+SELECT TOP 10
+    p.product_id, 
+    p.title, 
+    p.price, 
+    ft.RANK AS relevanceScore
+FROM products p
+INNER JOIN CONTAINSTABLE(products, (title, description), '"wireless*" OR "mouse*"', 50) AS ft
+    ON p.product_id = ft.[KEY]
+WHERE p.category_id = 1
+ORDER BY ft.RANK DESC;
+
+--very poor performance with the above query so we will try to update the table data now i will try to use my knowledge from mongodb and applying the wieght idea in text index search here to improve the result quality!
+
+--after trying this querie it tooks near 30s which is very poor performance but it shows a very high quality result so we will try to improve the performance  by limiting the results to only top 50 rows and also we will try to use the freetexttable instead of the containstable to see if it will improve the performance or not !
+
+Select
+    p.product_id, 
+    p.title, 
+    p.price,
+    -- Title matches get 10x multiplier over description matches
+    (ISNULL(ft_title.RANK, 0) * 10) + ISNULL(ft_desc.RANK, 0) AS relevanceScore
+FROM products p
+LEFT JOIN FREETEXTTABLE(products, title, 'wireless mouse') AS ft_title
+    ON p.product_id = ft_title.[KEY]
+LEFT JOIN FREETEXTTABLE(products, description, 'wireless mouse') AS ft_desc
+    ON p.product_id = ft_desc.[KEY]
+WHERE ft_title.[KEY] IS NOT NULL OR ft_desc.[KEY] IS NOT NULL
+ORDER BY relevanceScore DESC
+OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY;
+
+--hug difference in performance from 30s to 200-50 ms is good with very high quality results but we can still improve the performance by do only one join instead of two but then we will lose the wieght feature so its like performance over quality .
+
+SELECT 
+    p.product_id, 
+    p.title, 
+    p.price,
+    ft.RANK AS relevanceScore
+FROM products p
+INNER JOIN FREETEXTTABLE(products, (title, description), 'wireless mouse', 50) AS ft
+    ON p.product_id = ft.[KEY]
+ORDER BY ft.RANK DESC
+OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY;
+--note the offset and next fetch and the limit will be dynamic in production based ont the page number and the page size , but allways put a limit never let him like exced limit of like 50 page with 10 element in each ask him to do a better search term !
+
+--after 4h of optimising i got to this version of this query the ultimit one !
+
+-- Express passes: @searchTerm = 'wireless mouse', @offset = 0, @limit = 10, @topN = 10
+DECLARE @topN INT = @offset + @limit;
+IF @topN > 500 SET @topN = 500; -- Cap max search depth to protect CPU
+
+WITH FtsMerged AS (
+    -- Step 1: Merge title and description FTS keys in-memory before touching the table
+    SELECT 
+        COALESCE(ft_t.[KEY], ft_d.[KEY]) AS product_id,
+        (ISNULL(ft_t.RANK, 0) * 10) + ISNULL(ft_d.RANK, 0) AS relevanceScore
+    FROM FREETEXTTABLE(products, title, @searchTerm, @topN) AS ft_t
+    FULL OUTER JOIN FREETEXTTABLE(products, description, @searchTerm, @topN) AS ft_d
+        ON ft_t.[KEY] = ft_d.[KEY]
+)
+-- Step 2: Join the products table EXACTLY ONCE on the top matching IDs
+SELECT 
+    p.product_id, 
+    p.title, 
+    p.price,
+    f.relevanceScore
+FROM FtsMerged f
+INNER JOIN products p ON f.product_id = p.product_id
+ORDER BY f.relevanceScore DESC
+OFFSET @offset ROWS 
+FETCH NEXT @limit ROWS ONLY;
