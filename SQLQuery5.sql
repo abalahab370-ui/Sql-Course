@@ -2760,8 +2760,11 @@ OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY;
 --after 4h of optimising i got to this version of this query the ultimit one !
 
 -- Express passes: @searchTerm = 'wireless mouse', @offset = 0, @limit = 10, @topN = 10
+DECLARE @offset INT = 0;
+DECLARE @limit INT = 10;
 DECLARE @topN INT = @offset + @limit;
 IF @topN > 500 SET @topN = 500; -- Cap max search depth to protect CPU
+DECLARE @searchTerm NVARCHAR(200) = 'wireless mouse';
 
 WITH FtsMerged AS (
     -- Step 1: Merge title and description FTS keys in-memory before touching the table
@@ -2769,7 +2772,7 @@ WITH FtsMerged AS (
         COALESCE(ft_t.[KEY], ft_d.[KEY]) AS product_id,
         (ISNULL(ft_t.RANK, 0) * 10) + ISNULL(ft_d.RANK, 0) AS relevanceScore
     FROM FREETEXTTABLE(products, title, @searchTerm, @topN) AS ft_t
-    FULL OUTER JOIN FREETEXTTABLE(products, description, @searchTerm, @topN) AS ft_d
+    FULL JOIN FREETEXTTABLE(products, description, @searchTerm, @topN) AS ft_d
         ON ft_t.[KEY] = ft_d.[KEY]
 )
 -- Step 2: Join the products table EXACTLY ONCE on the top matching IDs
